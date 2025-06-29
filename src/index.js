@@ -182,38 +182,23 @@ class Deezer {
             position = 0;
         while (position < buffer.length) {
             const chunkSize = Math.min(2048, buffer.length - position);
+
             let chunk = Buffer.alloc(chunkSize);
             buffer.copy(chunk, 0, position, position + chunkSize);
+
             chunk =
                 i % 3 || chunkSize < 2048
                     ? chunk.toString("binary")
                     : blowfish.cbc(blowfishKey, Buffer.from([0, 1, 2, 3, 4, 5, 6, 7]), chunk, true).toString("binary");
+
             decryptedBuffer.write(chunk, position, chunk.length, "binary");
+
             position += chunkSize;
             i++;
         }
+
         return decryptedBuffer;
     }
 }
-
-module.exports = Deezer;
-		while (position < buffer.length) {
-			const chunkSize = Math.min(2048, buffer.length - position);
-
-			let chunk = Buffer.alloc(chunkSize);
-			buffer.copy(chunk, 0, position, position + chunkSize);
-
-			chunk =
-				i % 3 || chunkSize < 2048
-					? chunk.toString("binary")
-					: blowfish.cbc(blowfishKey, Buffer.from([0, 1, 2, 3, 4, 5, 6, 7]), chunk, true).toString("binary");
-
-			decryptedBuffer.write(chunk, position, chunk.length, "binary");
-
-			position += chunkSize;
-			i++;
-		}
-
-		return decryptedBuffer;
 
 module.exports = Deezer;
