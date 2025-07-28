@@ -299,7 +299,7 @@ const deezer = new Deezer(process.env.DEEZER_ARL);
 
 ## Links
 
-- [Docs]()
+- [Docs](https://laganyt.github.io/deezer.js/)
 - [npm](https://www.npmjs.com/package/@lagandevs/deezer.js)
 - [GitHub](https://github.com/laganyt/deezer.js)
 - [Original Package](https://www.npmjs.com/package/@flazepe/deezer.js)
