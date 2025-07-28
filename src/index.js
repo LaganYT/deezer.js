@@ -201,4 +201,4 @@ class Deezer {
     }
 }
 
-module.exports = Deezer;
+export default Deezer;
