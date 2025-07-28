@@ -18,14 +18,10 @@
 	],
 	"main": "src/index.js",
 	"types": "src/index.d.ts",
-	"engines": {
-		"node": ">=20.0.0"
-	},
 	"scripts": {
 		"docs:build": "jsdoc src -d docs -R README.md -t node_modules/clean-jsdoc-theme"
 	},
 	"author": "Logan Latham",
-	"license": "MIT",
 	"repository": {
 		"type": "git",
 		"url": "git+https://github.com/laganyt/deezer.js.git"
