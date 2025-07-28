@@ -11,7 +11,7 @@
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "https://github.com/laganyt/deezer.js.git"
+		"url": "git+https://github.com/laganyt/deezer.js.git"
 	},
 	"dependencies": {
 		"blowfish-js": "^1.0.0"
