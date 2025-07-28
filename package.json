@@ -1,5 +1,5 @@
 {
-	"name": "@laganyt/deezer.js",
+	"name": "@loganlatham/deezer.js",
 	"version": "2.0.9",
 	"description": "A simple package to interact with the Deezer API with track decryption support.",
 	"main": "src/index.js",
