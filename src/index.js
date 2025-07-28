@@ -1,12 +1,6 @@
-import blowfish from "blowfish-js";
-import { createHash } from "crypto";
-import fetch from "node-fetch";
-import { config } from "dotenv";
-
-// Constants
-const CBC_KEY = "g4el58wc0zvf9na1";
-const ENTITY_TYPES = ["track", "album", "artist", "playlist"];
-const SESSION_EXPIRE = 60000 * 15;
+const blowfish = require("blowfish-js"),
+	{ createHash } = require("crypto"),
+	{ request } = require("https");
 
 /**
  * @typedef {"track" | "album" | "artist" | "playlist"} EntityType An entity type
@@ -20,8 +14,11 @@ const SESSION_EXPIRE = 60000 * 15;
  */
 
 class Deezer {
+	static #CBC_KEY = "g4el58wc" + "0zvf9na1";
+	static #ENTITY_TYPES = ["track", "album", "artist", "playlist"];
+	static #SESSION_EXPIRE = 60000 * 15;
 	#arl = null;
-	#currentSessionTimestamp = 0;
+	#currentSessionTimestamp = null;
 	#sessionID = null;
 	#apiToken = null;
 	#isPremium = false;
@@ -36,32 +33,39 @@ class Deezer {
 		if (typeof arl === "string") this.#arl = arl;
 	}
 
-	async #request(url, options = {}) {
-		const { buffer, ...fetchOptions } = options;
-		if (this.#arl && !fetchOptions.headers?.cookie) {
-			fetchOptions.headers = { ...fetchOptions.headers, cookie: `arl=${this.#arl}` };
-		}
-		const res = await fetch(url, fetchOptions);
-		if (buffer) return Buffer.from(await res.arrayBuffer());
-		const text = await res.text();
-		try {
-			return JSON.parse(text);
-		} catch (e) {
-			console.error(`Error parsing body as JSON: ${text}`);
-			throw e;
-		}
+	#request(url, options = {}) {
+		return new Promise((resolve, reject) =>
+			request(url, options, res => {
+				const chunks = [];
+
+				res.on("data", chunk => chunks.push(chunk)).on("end", () => {
+					const buffer = Buffer.concat(chunks);
+
+					try {
+						resolve(options.buffer ? buffer : JSON.parse(buffer.toString()));
+					} catch (error) {
+						console.error(`Error parsing body as JSON: ${buffer.toString()}`);
+						reject(error);
+					}
+				});
+			})
+				.on("error", reject)
+				.end(options.body)
+		);
 	}
 
 	async #ensureSession() {
-		if (this.#currentSessionTimestamp + SESSION_EXPIRE > Date.now()) return;
+		if (this.#currentSessionTimestamp + Deezer.#SESSION_EXPIRE > Date.now()) return;
 
-		const data = await this.#request("https://www.deezer.com/ajax/gw-light.php?method=deezer.getUserData&input=3&api_version=1.0&api_token=");
-		const results = data.results;
+		const data = await this.#request("https://www.deezer.com/ajax/gw-light.php?method=deezer.getUserData&input=3&api_version=1.0&api_token=", {
+			headers: this.#arl ? { cookie: `arl=${this.#arl}` } : null
+		});
+
 		this.#currentSessionTimestamp = Date.now();
-		this.#sessionID = results.SESSION_ID;
-		this.#apiToken = results.checkForm;
-		this.#isPremium = results.OFFER_NAME !== "Deezer Free";
-		this.#licenseToken = results.USER.OPTIONS.license_token;
+		this.#sessionID = data.results.SESSION_ID;
+		this.#apiToken = data.results.checkForm;
+		this.#isPremium = data.results.OFFER_NAME !== "Deezer Free";
+		this.#licenseToken = data.results.USER.OPTIONS.license_token;
 	}
 
 	/**
@@ -91,9 +95,8 @@ class Deezer {
 	 */
 	async search(query, type) {
 		if (typeof query !== "string") throw new TypeError("`query` must be a string.");
-		type = ENTITY_TYPES.includes(type?.toLowerCase?.()) ? type.toLowerCase() : "track";
-		const res = await this.api("deezer.pageSearch", { query, start: 0, nb: 200, top_tracks: true });
-		return res.results[type.toUpperCase()]?.data ?? [];
+		type = Deezer.#ENTITY_TYPES.find(e => e === type?.toLowerCase?.()) ?? "track";
+		return (await this.api("deezer.pageSearch", { query, start: 0, nb: 200, top_tracks: true })).results[type.toUpperCase()].data;
 	}
 
 	/**
@@ -107,37 +110,42 @@ class Deezer {
 
 		if (type) {
 			if (typeof type !== "string") throw new TypeError("`type` must be a string.");
-			type = ENTITY_TYPES.includes(type.toLowerCase()) ? type.toLowerCase() : "track";
+			type = Deezer.#ENTITY_TYPES.find(e => e === type.toLowerCase()) ?? "track";
 		} else {
-			idOrURL = idOrURL.replace(/\/+$/, "");
-			type = ENTITY_TYPES.find(e => idOrURL.toLowerCase().includes(e)) ?? "track";
-			idOrURL = idOrURL.split("/").pop().split("?")[0];
+			while (idOrURL.endsWith("/")) idOrURL = idOrURL.slice(0, -1);
+
+			type = Deezer.#ENTITY_TYPES.find(e => idOrURL.toLowerCase().includes(e)) ?? "track";
+			idOrURL = idOrURL.split("/").pop().split("?").shift();
+
 			if (!/^[0-9]+$/.test(idOrURL)) return null;
 		}
 
 		const data = { type };
 
 		switch (type) {
-			case "track": {
+			case "track":
 				const track = (await this.api("song.getListData", { sng_ids: [idOrURL] })).results.data[0];
+
 				Object.assign(data, { info: track, tracks: [track] });
 				break;
-			}
-			case "album": {
+
+			case "album":
 				const album = (await this.api("deezer.pageAlbum", { alb_id: idOrURL, nb: 200, lang: "us" })).results;
+
 				Object.assign(data, { info: album.DATA, tracks: album.SONGS?.data ?? [] });
 				break;
-			}
-			case "artist": {
+
+			case "artist":
 				const artist = (await this.api("deezer.pageArtist", { art_id: idOrURL, lang: "us" })).results;
+
 				Object.assign(data, { info: artist.DATA, tracks: artist.TOP?.data ?? [] });
 				break;
-			}
-			case "playlist": {
+
+			case "playlist":
 				const playlist = (await this.api("deezer.pagePlaylist", { playlist_id: idOrURL, nb: 200 })).results;
+
 				Object.assign(data, { info: playlist.DATA, tracks: playlist.SONGS?.data ?? [] });
 				break;
-			}
 		}
 
 		return data.info ? data : null;
@@ -186,7 +194,7 @@ class Deezer {
 			blowfishKey = blowfish.key(
 				Array(16)
 					.fill(0)
-					.reduce((acc, _, i) => acc + String.fromCharCode(md5.charCodeAt(i) ^ md5.charCodeAt(i + 16) ^ CBC_KEY.charCodeAt(i)), "")
+					.reduce((acc, _, i) => acc + String.fromCharCode(md5.charCodeAt(i) ^ md5.charCodeAt(i + 16) ^ Deezer.#CBC_KEY.charCodeAt(i)), "")
 			),
 			decryptedBuffer = Buffer.alloc(buffer.length);
 
@@ -214,31 +222,4 @@ class Deezer {
 	}
 }
 
-// Load environment variables from .env file
-config();
-
-// Utility function for sanitizing filenames
-export function sanitizeFilename(nameInput) {
-	let str = typeof nameInput === 'string' ? nameInput : String(nameInput || "");
-
-	// Explicitly replace U+2019 (Right Single Quotation Mark) with an underscore first.
-	str = str.replace(/\u2019+/g, "_");
-	// Replace typographic apostrophe ' with underscores, keeping ASCII '
-	str = str.replace(/[']+/g, "_");
-	// Normalize Unicode (e.g., "curly quotes" → plain quotes, accents → base letters)
-	str = str.normalize("NFKD").replace(/[\u0300-\u036f]/g, "");
-
-	// Remove all non-ASCII characters
-	str = str.replace(/[^\x00-\x7F]/g, "");
-
-	// Replace anything not alphanumeric, hyphen, dot, comma, apostrophe, or space with _
-	str = str.replace(/[^a-z0-9\-\.\,' ]/gi, "_");
-
-	return str;
-}
-
-// Create a default instance with environment variable
-export const deezer = new Deezer(process.env.DEEZER_API_KEY);
-
-// Export the Deezer class as default
-export default Deezer;
+module.exports = Deezer;
