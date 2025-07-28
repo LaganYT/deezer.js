@@ -217,9 +217,8 @@ class Deezer {
 // Load environment variables from .env file
 config();
 
-const deezer = new Deezer(process.env.DEEZER_API_KEY);
-
-function sanitizeFilename(nameInput) {
+// Utility function for sanitizing filenames
+export function sanitizeFilename(nameInput) {
 	let str = typeof nameInput === 'string' ? nameInput : String(nameInput || "");
 
 	// Explicitly replace U+2019 (Right Single Quotation Mark) with an underscore first.
@@ -238,51 +237,8 @@ function sanitizeFilename(nameInput) {
 	return str;
 }
 
-export default async function handler(req, res) {
-	if (!res) {
-		// If res is undefined, this is not an API route context; do nothing.
-		return;
-	}
-	if (req.method !== "GET") {
-		return res.status(405).json({ error: "Method not allowed" });
-	}
+// Create a default instance with environment variable
+export const deezer = new Deezer(process.env.DEEZER_API_KEY);
 
-	const { trackId } = req.query;
-	if (!trackId) {
-		return res.status(400).json({ error: "Track ID is required" });
-	}
-
-	try {
-		const entity = await deezer.get(trackId, "track");
-		if (!entity?.tracks?.length) {
-			return res.status(404).json({ error: "Track not found" });
-		}
-
-		const track = entity.tracks[0];
-		const trackBuffer = await deezer.getAndDecryptTrack(track);
-
-		const artist = sanitizeFilename(track.ART_NAME || "Unknown Artist");
-		const title = sanitizeFilename(track.SNG_TITLE || "Unknown Title");
-		// Construct filename with underscores to ensure no spaces before encodeURIComponent
-		const filename = `${artist} - ${title}.mp3`;
-
-		console.log("Serving filename:", filename); // <-- This line will log the filename
-
-		res.setHeader("Content-Type", "audio/mpeg");
-		// Use a simpler Content-Disposition format.
-		// The 'filename' variable is already sanitized.
-		const cleanFilename = filename.replace(/[\r\n]+/g, "");
-		res.setHeader(
-			"Content-Disposition",
-			`inline; filename="${cleanFilename}"; filename*=UTF-8''${encodeURIComponent(cleanFilename)}`
-		);
-		res.setHeader("X-Track-Duration", track.DURATION || 0); // Duration in seconds
-
-		return res.status(200).send(trackBuffer);
-	} catch (error) {
-		console.error("Error fetching MP3:", error.message);
-		return res.status(500).json({ error: "Internal server error" });
-	}
-}
-
-export { Deezer };
+// Export the Deezer class as default
+export default Deezer;
