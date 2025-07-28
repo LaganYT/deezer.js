@@ -1,4 +1,4 @@
-declare module "@loganlatham/deezer.js" {
+declare module "@lagandevs/deezer.js" {
 	export type EntityType = "track" | "album" | "artist" | "playlist";
 
 	export interface Entity {
