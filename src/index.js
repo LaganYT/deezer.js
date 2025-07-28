@@ -1,6 +1,6 @@
 const blowfish = require("blowfish-js"),
 	{ createHash } = require("crypto"),
-	{ request } = require("https");
+	fetch = require("node-fetch");
 
 /**
  * @typedef {"track" | "album" | "artist" | "playlist"} EntityType An entity type
@@ -34,24 +34,21 @@ class Deezer {
 	}
 
 	#request(url, options = {}) {
-		return new Promise((resolve, reject) =>
-			request(url, options, res => {
-				const chunks = [];
-
-				res.on("data", chunk => chunks.push(chunk)).on("end", () => {
-					const buffer = Buffer.concat(chunks);
-
-					try {
-						resolve(options.buffer ? buffer : JSON.parse(buffer.toString()));
-					} catch (error) {
-						console.error(`Error parsing body as JSON: ${buffer.toString()}`);
-						reject(error);
-					}
-				});
-			})
-				.on("error", reject)
-				.end(options.body)
-		);
+		const { buffer, ...fetchOptions } = options;
+		if (this.#arl && !fetchOptions.headers?.cookie) {
+			fetchOptions.headers = { ...fetchOptions.headers, cookie: `arl=${this.#arl}` };
+		}
+		return fetch(url, fetchOptions)
+			.then(async res => {
+				if (buffer) return Buffer.from(await res.arrayBuffer());
+				const text = await res.text();
+				try {
+					return JSON.parse(text);
+				} catch (e) {
+					console.error(`Error parsing body as JSON: ${text}`);
+					throw e;
+				}
+			});
 	}
 
 	async #ensureSession() {
@@ -95,8 +92,9 @@ class Deezer {
 	 */
 	async search(query, type) {
 		if (typeof query !== "string") throw new TypeError("`query` must be a string.");
-		type = Deezer.#ENTITY_TYPES.find(e => e === type?.toLowerCase?.()) ?? "track";
-		return (await this.api("deezer.pageSearch", { query, start: 0, nb: 200, top_tracks: true })).results[type.toUpperCase()].data;
+		type = Deezer.#ENTITY_TYPES.includes(type?.toLowerCase?.()) ? type.toLowerCase() : "track";
+		const res = await this.api("deezer.pageSearch", { query, start: 0, nb: 200, top_tracks: true });
+		return res.results[type.toUpperCase()]?.data ?? [];
 	}
 
 	/**
@@ -110,42 +108,37 @@ class Deezer {
 
 		if (type) {
 			if (typeof type !== "string") throw new TypeError("`type` must be a string.");
-			type = Deezer.#ENTITY_TYPES.find(e => e === type.toLowerCase()) ?? "track";
+			type = Deezer.#ENTITY_TYPES.includes(type.toLowerCase()) ? type.toLowerCase() : "track";
 		} else {
-			while (idOrURL.endsWith("/")) idOrURL = idOrURL.slice(0, -1);
-
+			idOrURL = idOrURL.replace(/\/+$/, "");
 			type = Deezer.#ENTITY_TYPES.find(e => idOrURL.toLowerCase().includes(e)) ?? "track";
-			idOrURL = idOrURL.split("/").pop().split("?").shift();
-
+			idOrURL = idOrURL.split("/").pop().split("?")[0];
 			if (!/^[0-9]+$/.test(idOrURL)) return null;
 		}
 
 		const data = { type };
 
 		switch (type) {
-			case "track":
+			case "track": {
 				const track = (await this.api("song.getListData", { sng_ids: [idOrURL] })).results.data[0];
-
 				Object.assign(data, { info: track, tracks: [track] });
 				break;
-
-			case "album":
+			}
+			case "album": {
 				const album = (await this.api("deezer.pageAlbum", { alb_id: idOrURL, nb: 200, lang: "us" })).results;
-
 				Object.assign(data, { info: album.DATA, tracks: album.SONGS?.data ?? [] });
 				break;
-
-			case "artist":
+			}
+			case "artist": {
 				const artist = (await this.api("deezer.pageArtist", { art_id: idOrURL, lang: "us" })).results;
-
 				Object.assign(data, { info: artist.DATA, tracks: artist.TOP?.data ?? [] });
 				break;
-
-			case "playlist":
+			}
+			case "playlist": {
 				const playlist = (await this.api("deezer.pagePlaylist", { playlist_id: idOrURL, nb: 200 })).results;
-
 				Object.assign(data, { info: playlist.DATA, tracks: playlist.SONGS?.data ?? [] });
 				break;
+			}
 		}
 
 		return data.info ? data : null;
