@@ -1,6 +1,12 @@
 const blowfish = require("blowfish-js"),
-	{ createHash } = require("crypto"),
-	fetch = require("node-fetch");
+	{ createHash } = require("crypto");
+
+let fetch;
+
+// Dynamic import for node-fetch
+(async () => {
+	fetch = (await import("node-fetch")).default;
+})();
 
 /**
  * @typedef {"track" | "album" | "artist" | "playlist"} EntityType An entity type
@@ -33,7 +39,12 @@ class Deezer {
 		if (typeof arl === "string") this.#arl = arl;
 	}
 
-	#request(url, options = {}) {
+	async #request(url, options = {}) {
+		// Ensure fetch is loaded
+		if (!fetch) {
+			fetch = (await import("node-fetch")).default;
+		}
+
 		const { buffer, ...fetchOptions } = options;
 		if (this.#arl && !fetchOptions.headers?.cookie) {
 			fetchOptions.headers = { ...fetchOptions.headers, cookie: `arl=${this.#arl}` };

@@ -1,6 +1,6 @@
 {
 	"name": "@lagandevs/deezer.js",
-	"version": "1.0.7",
+	"version": "1.0.8",
 	"description": "A simple package to interact with the Deezer API with track decryption support.",
 	"keywords": [
 		"deezer",
@@ -31,7 +31,8 @@
 		"url": "git+https://github.com/laganyt/deezer.js.git"
 	},
 	"dependencies": {
-		"blowfish-js": "^1.0.0"
+		"blowfish-js": "^1.0.0",
+		"node-fetch": "^3.3.2"
 	},
 	"devDependencies": {
 		"@types/node": "^22.13.1",
