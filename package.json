@@ -1,6 +1,6 @@
 {
 	"name": "@lagandevs/deezer.js",
-	"version": "1.0.5",
+	"version": "1.0.6",
 	"description": "A simple package to interact with the Deezer API with track decryption support.",
 	"type": "module",
 	"keywords": [

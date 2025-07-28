@@ -1,6 +1,6 @@
 const blowfish = require("blowfish-js"),
 	{ createHash } = require("crypto"),
-	{ Agent } = require("https");
+	{ request } = require("https");
 
 /**
  * @typedef {"track" | "album" | "artist" | "playlist"} EntityType An entity type
@@ -17,18 +17,12 @@ class Deezer {
 	static #CBC_KEY = "g4el58wc" + "0zvf9na1";
 	static #ENTITY_TYPES = ["track", "album", "artist", "playlist"];
 	static #SESSION_EXPIRE = 60000 * 15;
-	static #HTTP_AGENT = new Agent({ keepAlive: true, maxSockets: 10 });
-	static #URL_REGEX = /^[0-9]+$/;
-	static #FORMAT_PRIORITIES = ["MP3_320", "MP3_256", "MP3_128", "MP3_64"];
-	
 	#arl = null;
 	#currentSessionTimestamp = null;
 	#sessionID = null;
 	#apiToken = null;
 	#isPremium = false;
 	#licenseToken = null;
-	#blowfishKeyCache = new Map();
-	#entityTypeCache = new Map();
 
 	/**
 	 * Constructs the Deezer class.
@@ -40,22 +34,12 @@ class Deezer {
 	}
 
 	#request(url, options = {}) {
-		return new Promise((resolve, reject) => {
-			const { request } = require("https");
-			const req = request(url, { 
-				agent: Deezer.#HTTP_AGENT,
-				...options 
-			}, res => {
+		return new Promise((resolve, reject) =>
+			request(url, options, res => {
 				const chunks = [];
-				let totalLength = 0;
 
-				res.on("data", chunk => {
-					chunks.push(chunk);
-					totalLength += chunk.length;
-				});
-
-				res.on("end", () => {
-					const buffer = Buffer.concat(chunks, totalLength);
+				res.on("data", chunk => chunks.push(chunk)).on("end", () => {
+					const buffer = Buffer.concat(chunks);
 
 					try {
 						resolve(options.buffer ? buffer : JSON.parse(buffer.toString()));
@@ -64,15 +48,10 @@ class Deezer {
 						reject(error);
 					}
 				});
-			});
-
-			req.on("error", reject);
-			
-			if (options.body) {
-				req.write(options.body);
-			}
-			req.end();
-		});
+			})
+				.on("error", reject)
+				.end(options.body)
+		);
 	}
 
 	async #ensureSession() {
@@ -103,41 +82,9 @@ class Deezer {
 
 		return this.#request(`https://www.deezer.com/ajax/gw-light.php?method=${method}&input=3&api_version=1.0&api_token=${this.#apiToken}`, {
 			method: "POST",
-			headers: { 
-				"Content-Type": "application/json",
-				cookie: `sid=${this.#sessionID}` 
-			},
+			headers: { cookie: `sid=${this.#sessionID}` },
 			body: JSON.stringify(body)
 		});
-	}
-
-	#getEntityType(type, idOrURL) {
-		if (type) {
-			if (typeof type !== "string") throw new TypeError("`type` must be a string.");
-			return Deezer.#ENTITY_TYPES.find(e => e === type.toLowerCase()) ?? "track";
-		}
-
-		// Check cache first
-		const cacheKey = idOrURL.toLowerCase();
-		if (this.#entityTypeCache.has(cacheKey)) {
-			return this.#entityTypeCache.get(cacheKey);
-		}
-
-		// Clean URL
-		let cleanURL = idOrURL;
-		while (cleanURL.endsWith("/")) cleanURL = cleanURL.slice(0, -1);
-
-		const foundType = Deezer.#ENTITY_TYPES.find(e => cleanURL.includes(e)) ?? "track";
-		
-		// Cache the result
-		this.#entityTypeCache.set(cacheKey, foundType);
-		return foundType;
-	}
-
-	#extractIdFromURL(idOrURL) {
-		let cleanURL = idOrURL;
-		while (cleanURL.endsWith("/")) cleanURL = cleanURL.slice(0, -1);
-		return cleanURL.split("/").pop().split("?").shift();
 	}
 
 	/**
@@ -161,11 +108,16 @@ class Deezer {
 	async get(idOrURL, type) {
 		if (typeof idOrURL !== "string") throw new TypeError("`idOrURL` must be a string.");
 
-		type = this.#getEntityType(type, idOrURL);
-		
-		if (!type) {
-			idOrURL = this.#extractIdFromURL(idOrURL);
-			if (!Deezer.#URL_REGEX.test(idOrURL)) return null;
+		if (type) {
+			if (typeof type !== "string") throw new TypeError("`type` must be a string.");
+			type = Deezer.#ENTITY_TYPES.find(e => e === type.toLowerCase()) ?? "track";
+		} else {
+			while (idOrURL.endsWith("/")) idOrURL = idOrURL.slice(0, -1);
+
+			type = Deezer.#ENTITY_TYPES.find(e => idOrURL.toLowerCase().includes(e)) ?? "track";
+			idOrURL = idOrURL.split("/").pop().split("?").shift();
+
+			if (!/^[0-9]+$/.test(idOrURL)) return null;
 		}
 
 		const data = { type };
@@ -173,55 +125,30 @@ class Deezer {
 		switch (type) {
 			case "track":
 				const track = (await this.api("song.getListData", { sng_ids: [idOrURL] })).results.data[0];
+
 				Object.assign(data, { info: track, tracks: [track] });
 				break;
 
 			case "album":
 				const album = (await this.api("deezer.pageAlbum", { alb_id: idOrURL, nb: 200, lang: "us" })).results;
+
 				Object.assign(data, { info: album.DATA, tracks: album.SONGS?.data ?? [] });
 				break;
 
 			case "artist":
 				const artist = (await this.api("deezer.pageArtist", { art_id: idOrURL, lang: "us" })).results;
+
 				Object.assign(data, { info: artist.DATA, tracks: artist.TOP?.data ?? [] });
 				break;
 
 			case "playlist":
 				const playlist = (await this.api("deezer.pagePlaylist", { playlist_id: idOrURL, nb: 200 })).results;
+
 				Object.assign(data, { info: playlist.DATA, tracks: playlist.SONGS?.data ?? [] });
 				break;
 		}
 
 		return data.info ? data : null;
-	}
-
-	#getBlowfishKey(trackId) {
-		// Check cache first
-		if (this.#blowfishKeyCache.has(trackId)) {
-			return this.#blowfishKeyCache.get(trackId);
-		}
-
-		const md5 = createHash("md5").update(trackId).digest("hex");
-		const key = blowfish.key(
-			Array(16)
-				.fill(0)
-				.reduce((acc, _, i) => acc + String.fromCharCode(md5.charCodeAt(i) ^ md5.charCodeAt(i + 16) ^ Deezer.#CBC_KEY.charCodeAt(i)), "")
-		);
-
-		// Cache the key
-		this.#blowfishKeyCache.set(trackId, key);
-		return key;
-	}
-
-	#findBestFormat(track, flac) {
-		if (flac) return "FLAC";
-		
-		for (const format of Deezer.#FORMAT_PRIORITIES) {
-			if (Number(track[`FILESIZE_${format}`])) {
-				return format;
-			}
-		}
-		return null;
 	}
 
 	/**
@@ -247,12 +174,11 @@ class Deezer {
 			if (!Number(track.FILESIZE_FLAC)) throw new Error(`FLAC audio is unavailable for track ${track.SNG_ID}.`);
 		}
 
-		const format = this.#findBestFormat(track, flac);
+		const format = flac ? "FLAC" : ["MP3_320", "MP3_256", "MP3_128", "MP3_64"].find(e => Number(track[`FILESIZE_${e}`]));
 		if (!format) throw new Error(`Audio is unavailable for track ${track.SNG_ID}.`);
 
 		const data = await this.#request("https://media.deezer.com/v1/get_url", {
 				method: "POST",
-				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({
 					license_token: this.#licenseToken,
 					media: [{ type: "FULL", formats: [{ cipher: "BF_CBC_STRIPE", format }] }],
@@ -263,28 +189,32 @@ class Deezer {
 
 		if (!url) throw new Error(`Could not get track ${track.SNG_ID}'s audio source URL: ${data?.errors?.[0]?.message ?? "Unknown error"}`);
 
-		const buffer = await this.#request(url, { buffer: true });
-		const blowfishKey = this.#getBlowfishKey(track.SNG_ID);
-		const decryptedBuffer = Buffer.allocUnsafe(buffer.length);
+		const buffer = await this.#request(url, { buffer: true }),
+			md5 = createHash("md5").update(track.SNG_ID).digest("hex"),
+			blowfishKey = blowfish.key(
+				Array(16)
+					.fill(0)
+					.reduce((acc, _, i) => acc + String.fromCharCode(md5.charCodeAt(i) ^ md5.charCodeAt(i + 16) ^ Deezer.#CBC_KEY.charCodeAt(i)), "")
+			),
+			decryptedBuffer = Buffer.alloc(buffer.length);
 
-		let i = 0;
-		let position = 0;
-		const chunkSize = 2048;
-		const iv = Buffer.from([0, 1, 2, 3, 4, 5, 6, 7]);
+		let i = 0,
+			position = 0;
 
 		while (position < buffer.length) {
-			const currentChunkSize = Math.min(chunkSize, buffer.length - position);
-			const chunk = buffer.subarray(position, position + currentChunkSize);
+			const chunkSize = Math.min(2048, buffer.length - position);
 
-			let decryptedChunk;
-			if (i % 3 || currentChunkSize < chunkSize) {
-				decryptedChunk = chunk;
-			} else {
-				decryptedChunk = blowfish.cbc(blowfishKey, iv, chunk, true);
-			}
+			let chunk = Buffer.alloc(chunkSize);
+			buffer.copy(chunk, 0, position, position + chunkSize);
 
-			decryptedChunk.copy(decryptedBuffer, position);
-			position += currentChunkSize;
+			chunk =
+				i % 3 || chunkSize < 2048
+					? chunk.toString("binary")
+					: blowfish.cbc(blowfishKey, Buffer.from([0, 1, 2, 3, 4, 5, 6, 7]), chunk, true).toString("binary");
+
+			decryptedBuffer.write(chunk, position, chunk.length, "binary");
+
+			position += chunkSize;
 			i++;
 		}
 
