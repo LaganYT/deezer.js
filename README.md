@@ -1,102 +1,270 @@
 # deezer.js
 
-A simple package to interact with the Deezer API with track decryption support.
+A simple Node.js package to interact with the Deezer API with track decryption support.
+
+## Installation
+
+```bash
+npm install @loganlatham/deezer.js
+```
+
+## Features
+
+- Search for tracks, albums, artists, and playlists
+- Get detailed information about entities by ID or URL
+- Download and decrypt tracks (MP3 and FLAC)
+- ARL cookie authentication required for all API requests
+- Premium account ARL required for FLAC quality
+
+## API Reference
+
+### Constructor
+
+```js
+new Deezer(arl?: string)
+```
+
+- `arl` (optional): Deezer ARL cookie required for all API requests. Premium account ARL required for FLAC quality.
+
+### Methods
+
+#### `search(query: string, type?: EntityType): Promise<Array<Record<string, any>>>`
+
+Searches for entities on Deezer. Requires ARL cookie authentication.
+
+- `query`: Search query string
+- `type` (optional): Entity type to search for (`"track"`, `"album"`, `"artist"`, `"playlist"`). Defaults to `"track"`
+
+Returns an array of search results matching the entity type.
+
+#### `get(idOrURL: string, type?: EntityType): Promise<Entity | null>`
+
+Gets detailed information about an entity by ID or URL. Requires ARL cookie authentication.
+
+- `idOrURL`: Entity ID or Deezer URL
+- `type` (optional): Entity type. If not provided, will be inferred from the URL
+
+Returns an `Entity` object with:
+- `type`: The entity type
+- `info`: Entity metadata
+- `tracks`: Array of tracks (1 track for single tracks, multiple for albums/artists/playlists)
+
+#### `getAndDecryptTrack(track: Record<string, any>, flac?: boolean): Promise<Buffer>`
+
+Downloads and decrypts a track. Requires ARL cookie authentication.
+
+- `track`: Track object from search or get results
+- `flac` (optional): Whether to download in FLAC format (Premium account ARL required). Defaults to `false`
+
+Returns a Buffer containing the decrypted audio data.
+
+#### `api(method: string, body: Record<string, any>): Promise<Record<string, any>>`
+
+Makes direct API calls to Deezer's internal API.
+
+- `method`: Deezer API method name
+- `body`: Request body object
 
 ## Examples
 
-### Searching for tracks, albums, artists, and playlists
+### Basic Usage
 
 ```js
-const { writeFile } = "fs/promises",
-	Deezer = require("@flazepe/deezer.js"),
-	deezer = new Deezer();
+const { writeFile } = require("fs/promises");
+const Deezer = require("@loganlatham/deezer.js");
+
+// Initialize with your ARL cookie (required for all API requests)
+const deezer = new Deezer("your_arl_cookie_here");
 
 (async () => {
-	// Search for tracks
-	const tracks = await deezer.search("A track name", "track"); // Or simply `await deezer.search("A track name")`
-	if (tracks[0]) console.log(tracks[0]);
+    try {
+        // Search for tracks
+        const tracks = await deezer.search("Bohemian Rhapsody");
+        console.log("Found tracks:", tracks.length);
+        if (tracks[0]) {
+            console.log("First track:", tracks[0].SNG_TITLE, "by", tracks[0].ART_NAME);
+        }
 
-	// Search for albums
-	const albums = await deezer.search("An album name", "album");
-	if (albums[0]) console.log(albums[0]);
+        // Search for albums
+        const albums = await deezer.search("A Night at the Opera", "album");
+        console.log("Found albums:", albums.length);
 
-	// Search for artists
-	const artists = await deezer.search("An artist name", "artist");
-	if (artists[0]) console.log(artists[0]);
+        // Search for artists
+        const artists = await deezer.search("Queen", "artist");
+        console.log("Found artists:", artists.length);
 
-	// Search for playlists
-	const playlists = await deezer.search("A playlist name", "playlist");
-	if (playlists[0]) console.log(playlists[0]);
+        // Search for playlists
+        const playlists = await deezer.search("Rock Classics", "playlist");
+        console.log("Found playlists:", playlists.length);
+    } catch (error) {
+        console.error("Error:", error.message);
+    }
 })();
 ```
 
-### Getting tracks, albums, artists, and playlists
+### Getting Entity Details
 
 ```js
-const { writeFile } = "fs/promises",
-	Deezer = require("@flazepe/deezer.js"),
-	deezer = new Deezer();
+const Deezer = require("@loganlatham/deezer.js");
+
+// Initialize with your ARL cookie (required for all API requests)
+const deezer = new Deezer("your_arl_cookie_here");
 
 (async () => {
-	// Get a track by ID
-	let entity = await deezer.get("A track ID", "track"); // Or simply `await deezer.get("A track ID")`
-	if (entity) console.log(entity.type, entity.info, entity.tracks); // `entity.tracks` would contain exactly 1 track
+    try {
+        // Get track by ID
+        const trackEntity = await deezer.get("3135556", "track");
+        if (trackEntity) {
+            console.log("Track:", trackEntity.info.SNG_TITLE);
+            console.log("Artist:", trackEntity.info.ART_NAME);
+            console.log("Tracks array length:", trackEntity.tracks.length); // Should be 1
+        }
 
-	// Get an album by ID
-	entity = await deezer.get("An album ID", "album");
-	if (entity) console.log(entity.type, entity.info, entity.tracks); // `entity.tracks` would contain the album's tracks
+        // Get album by ID
+        const albumEntity = await deezer.get("302127", "album");
+        if (albumEntity) {
+            console.log("Album:", albumEntity.info.ALB_TITLE);
+            console.log("Artist:", albumEntity.info.ART_NAME);
+            console.log("Number of tracks:", albumEntity.tracks.length);
+        }
 
-	// Get an artist by ID
-	entity = await deezer.get("An artist ID", "artist");
-	if (entity) console.log(entity.type, entity.info, entity.tracks); // `entity.tracks` would contain the artist's top tracks
+        // Get artist by ID
+        const artistEntity = await deezer.get("412", "artist");
+        if (artistEntity) {
+            console.log("Artist:", artistEntity.info.ART_NAME);
+            console.log("Top tracks:", artistEntity.tracks.length);
+        }
 
-	// Get a playlist by ID
-	entity = await deezer.get("A playlist ID", "playlist");
-	if (entity) console.log(entity.type, entity.info, entity.tracks); // `entity.tracks` would contain the playlist's tracks
+        // Get playlist by ID
+        const playlistEntity = await deezer.get("1234567890", "playlist");
+        if (playlistEntity) {
+            console.log("Playlist:", playlistEntity.info.PLAYLIST_TITLE);
+            console.log("Number of tracks:", playlistEntity.tracks.length);
+        }
 
-	// No need to provide the entity type if you are providing a URL
-	entity = await deezer.get("https://www.deezer.com/en/album/428673387");
-	if (entity) console.log(entity.type, entity.info, entity.tracks);
+        // Get entity from URL (type will be auto-detected)
+        const entity = await deezer.get("https://www.deezer.com/en/album/302127");
+        if (entity) {
+            console.log("Entity type:", entity.type);
+            console.log("Entity info:", entity.info.ALB_TITLE || entity.info.SNG_TITLE);
+        }
+    } catch (error) {
+        console.error("Error:", error.message);
+    }
 })();
 ```
 
-### Downloading a track
+### Downloading Tracks
 
 ```js
-const { writeFile } = "fs/promises",
-	Deezer = require("@flazepe/deezer.js"),
-	deezer = new Deezer();
+const { writeFile } = require("fs/promises");
+const Deezer = require("@loganlatham/deezer.js");
+
+// Initialize with your ARL cookie (required for all API requests)
+const deezer = new Deezer("your_arl_cookie_here");
 
 (async () => {
-	const tracks = await deezer.search("From Under Cover (Caught Up In A Love Song)"),
-		track = tracks[0],
-		trackBuffer = await deezer.getAndDecryptTrack(track);
+    try {
+        // Search for a track
+        const tracks = await deezer.search("Bohemian Rhapsody");
+        if (tracks.length === 0) {
+            console.log("No tracks found");
+            return;
+        }
 
-	// Save track to a file
-	await writeFile(`${track.ART_NAME} - ${track.SNG_TITLE}.mp3`, trackBuffer);
+        const track = tracks[0];
+        console.log(`Downloading: ${track.ART_NAME} - ${track.SNG_TITLE}`);
+
+        // Download as MP3 (default)
+        const trackBuffer = await deezer.getAndDecryptTrack(track);
+        
+        // Save to file
+        const filename = `${track.ART_NAME} - ${track.SNG_TITLE}.mp3`;
+        await writeFile(filename, trackBuffer);
+        console.log(`Downloaded: ${filename}`);
+    } catch (error) {
+        console.error("Error:", error.message);
+    }
 })();
 ```
 
-### Downloading a track in FLAC (for Deezer Premium accounts only)
-
-Provide the Deezer `arl` cookie to the constructor to authenticate as a Deezer Premium account.
+### Premium Account Usage (FLAC Downloads)
 
 ```js
-const { writeFile } = "fs/promises",
-	Deezer = require("@flazepe/deezer.js"),
-	deezer = new Deezer("xxxxxxxxxxxxxxxxxxxx"); // Insert your arl cookie here
+const { writeFile } = require("fs/promises");
+const Deezer = require("@loganlatham/deezer.js");
+
+// Initialize with your Premium account ARL cookie (required for all API requests, Premium for FLAC)
+const deezer = new Deezer("your_premium_arl_cookie_here");
 
 (async () => {
-	const tracks = await deezer.search("From Under Cover (Caught Up In A Love Song)"),
-		track = tracks[0],
-		trackBuffer = await deezer.getAndDecryptTrack(track, true); // Set the FLAC parameter to `true`
+    try {
+        const tracks = await deezer.search("Bohemian Rhapsody");
+        if (tracks.length === 0) {
+            console.log("No tracks found");
+            return;
+        }
 
-	// Save track to a file
-	await writeFile(`${track.ART_NAME} - ${track.SNG_TITLE}.flac`, trackBuffer);
+        const track = tracks[0];
+        console.log(`Downloading FLAC: ${track.ART_NAME} - ${track.SNG_TITLE}`);
+
+        // Download as FLAC (Premium accounts only)
+        const trackBuffer = await deezer.getAndDecryptTrack(track, true);
+        
+        // Save to file
+        const filename = `${track.ART_NAME} - ${track.SNG_TITLE}.flac`;
+        await writeFile(filename, trackBuffer);
+        console.log(`Downloaded: ${filename}`);
+    } catch (error) {
+        console.error("Error:", error.message);
+    }
 })();
 ```
+
+### Error Handling
+
+```js
+const Deezer = require("@loganlatham/deezer.js");
+
+// ARL cookie required for all API requests
+const deezer = new Deezer("your_arl_cookie_here");
+
+(async () => {
+    try {
+        // Handle search errors
+        const tracks = await deezer.search("", "track"); // Empty query
+        console.log("Search results:", tracks);
+
+        // Handle invalid entity IDs
+        const entity = await deezer.get("999999999999", "track");
+        if (entity === null) {
+            console.log("Entity not found");
+        }
+
+        // Handle FLAC download without Premium
+        const track = await deezer.get("3135556", "track");
+        if (track) {
+            try {
+                await deezer.getAndDecryptTrack(track.info, true); // Will throw error
+            } catch (error) {
+                console.log("FLAC error:", error.message);
+            }
+        }
+    } catch (error) {
+        console.error("Error:", error.message);
+    }
+})();
+```
+
+## Notes
+
+- **ARL Cookie Required**: All API requests (search, get, download) require a Deezer ARL cookie. Provide it to the constructor.
+- **Premium Account Required**: FLAC downloads require a Deezer Premium account ARL cookie.
+- **Rate Limiting**: Be mindful of Deezer's rate limits when making multiple requests.
+- **Audio Quality**: Available audio quality depends on your account type and the track's availability.
+- **Fallback Tracks**: Some tracks may have fallback versions if the original is unavailable.
 
 ## Links
 
--   [Documentation](https://flazepe.github.io/deezer.js/)
--   [npm](https://www.npmjs.com/package/@flazepe/deezer.js)
+- [npm](https://www.npmjs.com/package/@loganlatham/deezer.js)
+- [GitHub](https://github.com/loganlatham/deezer.js)

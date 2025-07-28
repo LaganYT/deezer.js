@@ -1,13 +1,13 @@
 {
 	"name": "@loganlatham/deezer.js",
-	"version": "2.0.9",
+	"version": "1.0.0",
 	"description": "A simple package to interact with the Deezer API with track decryption support.",
 	"main": "src/index.js",
 	"types": "src/index.d.ts",
 	"scripts": {
 		"docs:build": "jsdoc src -d docs -R README.md -t node_modules/clean-jsdoc-theme"
 	},
-	"author": "flazepe",
+	"author": "Logan Latham",
 	"license": "MIT",
 	"repository": {
 		"type": "git",
