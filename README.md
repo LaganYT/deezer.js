@@ -256,6 +256,39 @@ const deezer = new Deezer("your_arl_cookie_here");
 })();
 ```
 
+## How to Find Your ARL Cookie
+
+The ARL cookie is required for all API requests. Here's how to find it:
+
+1. **Login to deezer.com** in your browser
+2. **Press Fn+F12** to open Developer Tools
+3. **In the top bar** where it says "Elements", "Console", "Sources", etc., **click the arrow pointing to the right** and select **"Application"**
+4. **On the left side**, under "Storage", look for the **"Cookies"** dropdown
+5. **Click on the Cookies dropdown** and you'll find the ARL code there
+6. **Copy the ARL value** - this is what you need for the library
+
+### Important Notes
+
+- **Keep your ARL cookie secure**: Don't share it publicly or commit it to version control
+- **ARL expires**: The cookie may expire periodically, requiring you to get a new one
+- **Premium accounts**: For FLAC downloads, you need an ARL from a Premium account
+- **Account-specific**: Each account has its own unique ARL cookie
+
+### Environment Variable (Recommended)
+
+Store your ARL cookie in an environment variable for security:
+
+```bash
+# Add to your .env file or shell profile
+export DEEZER_ARL="your_arl_cookie_here"
+```
+
+Then use it in your code:
+
+```javascript
+const deezer = new Deezer(process.env.DEEZER_ARL);
+```
+
 ## Notes
 
 - **ARL Cookie Required**: All API requests (search, get, download) require a Deezer ARL cookie. Provide it to the constructor.
@@ -268,3 +301,4 @@ const deezer = new Deezer("your_arl_cookie_here");
 
 - [npm](https://www.npmjs.com/package/@loganlatham/deezer.js)
 - [GitHub](https://github.com/loganlatham/deezer.js)
+- [Original Package](https://www.npmjs.com/package/@flazepe/deezer.js)
