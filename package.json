@@ -1,43 +1,36 @@
 {
-	"name": "@lagandevs/deezer.js",
-	"version": "3.0.0",
-	"description": "A simple package to interact with the Deezer API with track decryption support.",
-	"main": "./src/index.js",
-	"types": "./src/index.d.ts",
-	"exports": {
-		".": {
-			"types": "./src/index.d.ts",
-			"require": "./src/index.js",
-			"default": "./src/index.js"
-		}
-	},
-	"files": [
-		"src",
-		"LICENSE",
-		"README.md"
-	],
-	"engines": {
-		"node": ">=18.17.0"
-	},
-	"sideEffects": false,
-	"scripts": {
-		"benchmark": "node benchmark/decryption.js",
-		"benchmark:quick": "node benchmark/decryption.js --sizes=1,5 --iterations=3 --warmup=1",
-		"benchmark:e2e": "node benchmark/e2e.js",
-		"check": "node --check src/index.js && node --check benchmark/decryption.js && node --check benchmark/e2e.js && node --check benchmark/legacy-deezer.js"
-	},
-	"author": "lagandevs",
-	"license": "MIT",
-	"repository": {
-		"type": "git",
-		"url": "git+https://github.com/laganyt/deezer.js.git"
-	},
-	"dependencies": {
-		"blowfish-js": "^1.0.0"
-	},
-	"devDependencies": {
-		"@types/node": "^22.13.1",
-		"clean-jsdoc-theme": "^4.3.0",
-		"jsdoc": "^4.0.4"
-	}
+  "name": "@lagandevs/deezer.js",
+  "version": "4.0.2",
+  "description": "A Cloudflare Workers-compatible Deezer API client with track decryption support.",
+  "type": "module",
+  "main": "./src/index.js",
+  "module": "./src/index.js",
+  "types": "./src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "import": "./src/index.js",
+      "default": "./src/index.js"
+    }
+  },
+  "files": [
+    "src",
+    "LICENSE",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "lint": "node scripts/lint.mjs",
+    "test": "node --test",
+    "check": "pnpm lint && pnpm test"
+  },
+  "author": "lagandevs",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LaganYT/deezer.js.git"
+  },
+  "dependencies": {
+    "egoroof-blowfish": "4.0.3"
+  }
 }

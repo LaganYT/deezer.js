@@ -1,102 +1,89 @@
-# deezer.js
+# @lagandevs/deezer.js
 
-A simple package to interact with the Deezer API with track decryption support.
+A Cloudflare Workers-first Deezer API client with track decryption and the Worker-facing `DeezerAPI` helpers used by LTunes.
 
-## Examples
+## Install
 
-### Searching for tracks, albums, artists, and playlists
-
-```js
-const { writeFile } = "fs/promises",
-	Deezer = require("@flazepe/deezer.js"),
-	deezer = new Deezer();
-
-(async () => {
-	// Search for tracks
-	const tracks = await deezer.search("A track name", "track"); // Or simply `await deezer.search("A track name")`
-	if (tracks[0]) console.log(tracks[0]);
-
-	// Search for albums
-	const albums = await deezer.search("An album name", "album");
-	if (albums[0]) console.log(albums[0]);
-
-	// Search for artists
-	const artists = await deezer.search("An artist name", "artist");
-	if (artists[0]) console.log(artists[0]);
-
-	// Search for playlists
-	const playlists = await deezer.search("A playlist name", "playlist");
-	if (playlists[0]) console.log(playlists[0]);
-})();
+```bash
+pnpm add @lagandevs/deezer.js
 ```
 
-### Getting tracks, albums, artists, and playlists
+## Cloudflare Workers / LTunes
 
 ```js
-const { writeFile } = "fs/promises",
-	Deezer = require("@flazepe/deezer.js"),
-	deezer = new Deezer();
+import { DeezerAPI } from "@lagandevs/deezer.js";
 
-(async () => {
-	// Get a track by ID
-	let entity = await deezer.get("A track ID", "track"); // Or simply `await deezer.get("A track ID")`
-	if (entity) console.log(entity.type, entity.info, entity.tracks); // `entity.tracks` would contain exactly 1 track
+const deezer = new DeezerAPI();
 
-	// Get an album by ID
-	entity = await deezer.get("An album ID", "album");
-	if (entity) console.log(entity.type, entity.info, entity.tracks); // `entity.tracks` would contain the album's tracks
-
-	// Get an artist by ID
-	entity = await deezer.get("An artist ID", "artist");
-	if (entity) console.log(entity.type, entity.info, entity.tracks); // `entity.tracks` would contain the artist's top tracks
-
-	// Get a playlist by ID
-	entity = await deezer.get("A playlist ID", "playlist");
-	if (entity) console.log(entity.type, entity.info, entity.tracks); // `entity.tracks` would contain the playlist's tracks
-
-	// No need to provide the entity type if you are providing a URL
-	entity = await deezer.get("https://www.deezer.com/en/album/428673387");
-	if (entity) console.log(entity.type, entity.info, entity.tracks);
-})();
+export default {
+  async fetch(request, env) {
+    return deezer.searchTracks({ query: "test" }, env);
+  }
+};
 ```
 
-### Downloading a track
+The Worker helper methods read the Deezer ARL from `env.DEEZER_API_KEY`, matching the existing LTunes API integration.
+
+Worker-facing methods include:
+
+- `searchTracks(params, env)`
+- `searchAlbums(params, env)`
+- `searchArtists(params, env)`
+- `searchAll(params, env)`
+- `getAudioURL(params, env, request)`
+- `streamTrack(trackId, env)`
+- `getArtist(artistId, env)`
+- `getArtistAlbums(artistId, params, env)`
+- `getAlbum(albumId, env)`
+- `getTopCharts(params, env)`
+- `downloadTrack(params, env)`
+- `getLyrics(params, env)`
+- `downloadWithCustomMetadata(params, env, request)`
+
+## Core client API
+
+The lower-level package API remains available too:
 
 ```js
-const { writeFile } = "fs/promises",
-	Deezer = require("@flazepe/deezer.js"),
-	deezer = new Deezer();
+import DeezerAPI, { Deezer } from "@lagandevs/deezer.js";
 
-(async () => {
-	const tracks = await deezer.search("From Under Cover (Caught Up In A Love Song)"),
-		track = tracks[0],
-		trackBuffer = await deezer.getAndDecryptTrack(track);
-
-	// Save track to a file
-	await writeFile(`${track.ART_NAME} - ${track.SNG_TITLE}.mp3`, trackBuffer);
-})();
+const deezer = new DeezerAPI("your-arl");
+const entity = await deezer.get("3692935892", "track");
+const audio = await deezer.getAndDecryptTrack(entity.tracks[0]);
 ```
 
-### Downloading a track in FLAC (for Deezer Premium accounts only)
+`DeezerAPI`, `Deezer`, and the default export all refer to the same class, so both the old LTunes import and the newer package examples remain compatible.
 
-Provide the Deezer `arl` cookie to the constructor to authenticate as a Deezer Premium account.
+Core methods:
+
+- `new DeezerAPI(arl?)`
+- `api(method, body)`
+- `search(query, type?)`
+- `get(idOrURL, type?)`
+- `getAndDecryptTrack(track, flac?)`
+
+`getAndDecryptTrack()` returns a `Uint8Array`. In a Worker it can be passed directly to `Response`:
 
 ```js
-const { writeFile } = "fs/promises",
-	Deezer = require("@flazepe/deezer.js"),
-	deezer = new Deezer("xxxxxxxxxxxxxxxxxxxx"); // Insert your arl cookie here
-
-(async () => {
-	const tracks = await deezer.search("From Under Cover (Caught Up In A Love Song)"),
-		track = tracks[0],
-		trackBuffer = await deezer.getAndDecryptTrack(track, true); // Set the FLAC parameter to `true`
-
-	// Save track to a file
-	await writeFile(`${track.ART_NAME} - ${track.SNG_TITLE}.flac`, trackBuffer);
-})();
+const audio = await deezer.getAndDecryptTrack(entity.tracks[0]);
+return new Response(audio, {
+  headers: { "content-type": "audio/mpeg" }
+});
 ```
 
-## Links
+## Worker runtime
 
--   [Documentation](https://flazepe.github.io/deezer.js/)
--   [npm](https://www.npmjs.com/package/@flazepe/deezer.js)
+The package does not require `nodejs_compat` and runtime code does not import Node modules. It uses:
+
+- global `fetch()` for HTTP
+- `Uint8Array`, `DataView`, and `TextEncoder` for binary processing
+- a small protocol-specific MD5 implementation for Deezer key derivation
+- the ESM/browser-compatible `egoroof-blowfish` package for BF-CBC decryption
+
+The package intentionally avoids `node:https`, `https.Agent`, Node streams, `Buffer`, `require()`, and `module.exports` in runtime source.
+
+## Performance
+
+The Worker implementation keeps a 15-minute in-memory session cache for warm isolates. Cold isolates continue to initialize normally, so the cache is only an optimization and is not required for correctness.
+
+Track decryption is performed in-place and initializes the Blowfish key schedule once per track instead of once per encrypted 2 KB stripe, reducing CPU and allocation overhead in Workers.
