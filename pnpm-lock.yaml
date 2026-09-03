@@ -14,7 +14,8 @@ importers:
 
 packages:
 
-  egoroof-blowfish@4.0.3: {}
+  egoroof-blowfish@4.0.3:
+    resolution: {integrity: sha512-aoiyyD89KSkS/WnIKp83AtYyKWWa6yF13nbTLCTZdL/DZiP2QF70pBNJxynobzh3JnYhTIAAiMgfDW+4XM4JGw==}
 
 snapshots:
 
