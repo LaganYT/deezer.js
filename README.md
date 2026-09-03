@@ -1,17 +1,17 @@
-# @lagandevs/deezer.js
+# @lagandevs/deezer-worker
 
 A Cloudflare Workers-first Deezer API client with track decryption and the Worker-facing `DeezerAPI` helpers used by LTunes.
 
 ## Install
 
 ```bash
-pnpm add @lagandevs/deezer.js
+pnpm add @lagandevs/deezer-worker
 ```
 
 ## Cloudflare Workers / LTunes
 
 ```js
-import { DeezerAPI } from "@lagandevs/deezer.js";
+import { DeezerAPI } from "@lagandevs/deezer-worker";
 
 const deezer = new DeezerAPI();
 
@@ -45,7 +45,7 @@ Worker-facing methods include:
 The lower-level package API remains available too:
 
 ```js
-import DeezerAPI, { Deezer } from "@lagandevs/deezer.js";
+import DeezerAPI, { Deezer } from "@lagandevs/deezer-worker";
 
 const deezer = new DeezerAPI("your-arl");
 const entity = await deezer.get("3692935892", "track");
