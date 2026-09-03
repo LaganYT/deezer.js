@@ -1,5 +1,6 @@
 const blowfish = require("blowfish-js");
 const { createHash } = require("node:crypto");
+const { Agent, request } = require("node:https");
 
 const CBC_KEY = Buffer.from("g4el58wc0zvf9na1", "ascii");
 const BLOWFISH_IV = Buffer.from([0, 1, 2, 3, 4, 5, 6, 7]);
@@ -7,6 +8,14 @@ const ENTITY_TYPES = ["track", "album", "artist", "playlist"];
 const MP3_FORMATS = ["MP3_320", "MP3_256", "MP3_128", "MP3_64"];
 const SESSION_EXPIRE = 15 * 60 * 1000;
 const STRIPE_SIZE = 2048;
+const MAX_REDIRECTS = 5;
+const HTTPS_AGENT = new Agent({
+	keepAlive: true,
+	keepAliveMsecs: 1000,
+	maxSockets: 32,
+	maxFreeSockets: 8,
+	scheduling: "lifo"
+});
 
 /**
  * @typedef {"track" | "album" | "artist" | "playlist"} EntityType An entity type
@@ -37,20 +46,68 @@ class Deezer {
 		if (typeof arl === "string") this.#arl = arl;
 	}
 
-	async #request(url, options = {}) {
-		const { buffer = false, ...requestOptions } = options;
-		const response = await fetch(url, requestOptions);
+	#request(url, options = {}, redirects = 0) {
+		const { buffer = false, body, headers, ...requestOptions } = options;
 
-		if (buffer) return Buffer.from(await response.arrayBuffer());
+		return new Promise((resolve, reject) => {
+			const req = request(
+				url,
+				{
+					...requestOptions,
+					agent: HTTPS_AGENT,
+					headers
+				},
+				res => {
+					if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+						res.resume();
 
-		const body = await response.text();
+						if (redirects >= MAX_REDIRECTS) {
+							reject(new Error(`Too many redirects while requesting ${url}`));
+							return;
+						}
 
-		try {
-			return JSON.parse(body);
-		} catch (error) {
-			console.error(`Error parsing body as JSON: ${body}`);
-			throw error;
-		}
+						const redirectURL = new URL(res.headers.location, url).href;
+						const redirectOptions = { ...options };
+
+						if (res.statusCode === 303) {
+							redirectOptions.method = "GET";
+							delete redirectOptions.body;
+						}
+
+						this.#request(redirectURL, redirectOptions, redirects + 1).then(resolve, reject);
+						return;
+					}
+
+					const chunks = [];
+					let totalLength = 0;
+
+					res.on("data", chunk => {
+						chunks.push(chunk);
+						totalLength += chunk.length;
+					});
+
+					res.on("end", () => {
+						const responseBuffer = chunks.length === 1 ? chunks[0] : Buffer.concat(chunks, totalLength);
+
+						if (buffer) {
+							resolve(responseBuffer);
+							return;
+						}
+
+						try {
+							resolve(JSON.parse(responseBuffer.toString("utf8")));
+						} catch (error) {
+							console.error(`Error parsing body as JSON: ${responseBuffer.toString("utf8")}`);
+							reject(error);
+						}
+					});
+				}
+			);
+
+			req.on("error", reject);
+			if (body != null) req.end(body);
+			else req.end();
+		});
 	}
 
 	async #refreshSession() {
@@ -211,16 +268,17 @@ class Deezer {
 		for (let i = 0; i < key.length; i++) key[i] = md5[i] ^ md5[i + 16] ^ CBC_KEY[i];
 
 		const blowfishKey = blowfish.key(key);
-		const decryptedBuffer = Buffer.from(buffer);
 
+		// The downloaded buffer is private to this operation, so decrypting encrypted
+		// stripes in place avoids a full-track copy without changing returned bytes.
 		for (let position = 0, stripe = 0; position + STRIPE_SIZE <= buffer.length; position += STRIPE_SIZE, stripe++) {
 			if (stripe % 3 !== 0) continue;
 
 			const decrypted = blowfish.cbc(blowfishKey, BLOWFISH_IV, buffer.subarray(position, position + STRIPE_SIZE), true);
-			decryptedBuffer.set(decrypted, position);
+			buffer.set(decrypted, position);
 		}
 
-		return decryptedBuffer;
+		return buffer;
 	}
 }
 
