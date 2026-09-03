@@ -9,6 +9,8 @@ const MP3_FORMATS = ["MP3_320", "MP3_256", "MP3_128", "MP3_64"];
 const SESSION_EXPIRE = 15 * 60 * 1000;
 const STRIPE_SIZE = 2048;
 const MAX_REDIRECTS = 5;
+const ANONYMOUS_SESSION_KEY = "anonymous";
+const SESSION_CACHE = new Map();
 const HTTPS_AGENT = new Agent({
 	keepAlive: true,
 	keepAliveMsecs: 1000,
@@ -30,6 +32,7 @@ const HTTPS_AGENT = new Agent({
 
 class Deezer {
 	#arl = null;
+	#sessionCacheKey = ANONYMOUS_SESSION_KEY;
 	#currentSessionTimestamp = 0;
 	#sessionID = null;
 	#apiToken = null;
@@ -43,7 +46,10 @@ class Deezer {
 	 * @returns {Object} The Deezer class instance
 	 */
 	constructor(arl) {
-		if (typeof arl === "string") this.#arl = arl;
+		if (typeof arl === "string" && arl.length) {
+			this.#arl = arl;
+			this.#sessionCacheKey = createHash("sha256").update(arl).digest("base64url");
+		}
 	}
 
 	#request(url, options = {}, redirects = 0) {
@@ -110,28 +116,62 @@ class Deezer {
 		});
 	}
 
+	#applySession(session) {
+		this.#currentSessionTimestamp = session.timestamp;
+		this.#sessionID = session.sessionID;
+		this.#apiToken = session.apiToken;
+		this.#isPremium = session.isPremium;
+		this.#licenseToken = session.licenseToken;
+	}
+
 	async #refreshSession() {
 		const data = await this.#request("https://www.deezer.com/ajax/gw-light.php?method=deezer.getUserData&input=3&api_version=1.0&api_token=", {
 			headers: this.#arl ? { cookie: `arl=${this.#arl}` } : undefined
 		});
 
-		this.#currentSessionTimestamp = Date.now();
-		this.#sessionID = data.results.SESSION_ID;
-		this.#apiToken = data.results.checkForm;
-		this.#isPremium = data.results.OFFER_NAME !== "Deezer Free";
-		this.#licenseToken = data.results.USER.OPTIONS.license_token;
+		const session = {
+			timestamp: Date.now(),
+			sessionID: data.results.SESSION_ID,
+			apiToken: data.results.checkForm,
+			isPremium: data.results.OFFER_NAME !== "Deezer Free",
+			licenseToken: data.results.USER.OPTIONS.license_token
+		};
+
+		SESSION_CACHE.set(this.#sessionCacheKey, session);
+		this.#applySession(session);
 	}
 
 	async #ensureSession() {
-		if (this.#currentSessionTimestamp + SESSION_EXPIRE > Date.now()) return;
+		const now = Date.now();
+		if (this.#currentSessionTimestamp + SESSION_EXPIRE > now) return;
 
-		if (!this.#sessionPromise) {
-			this.#sessionPromise = this.#refreshSession().finally(() => {
-				this.#sessionPromise = null;
-			});
+		const cached = SESSION_CACHE.get(this.#sessionCacheKey);
+		if (cached?.promise) {
+			const session = await cached.promise;
+			this.#applySession(session);
+			return;
 		}
 
-		await this.#sessionPromise;
+		if (cached?.timestamp + SESSION_EXPIRE > now) {
+			this.#applySession(cached);
+			return;
+		}
+
+		if (!this.#sessionPromise) {
+			const promise = this.#refreshSession()
+				.then(() => SESSION_CACHE.get(this.#sessionCacheKey))
+				.finally(() => {
+					const current = SESSION_CACHE.get(this.#sessionCacheKey);
+					if (current?.promise) SESSION_CACHE.delete(this.#sessionCacheKey);
+					this.#sessionPromise = null;
+				});
+
+			this.#sessionPromise = promise;
+			SESSION_CACHE.set(this.#sessionCacheKey, { promise });
+		}
+
+		const session = await this.#sessionPromise;
+		if (session) this.#applySession(session);
 	}
 
 	/**
@@ -269,8 +309,6 @@ class Deezer {
 
 		const blowfishKey = blowfish.key(key);
 
-		// The downloaded buffer is private to this operation, so decrypting encrypted
-		// stripes in place avoids a full-track copy without changing returned bytes.
 		for (let position = 0, stripe = 0; position + STRIPE_SIZE <= buffer.length; position += STRIPE_SIZE, stripe++) {
 			if (stripe % 3 !== 0) continue;
 
