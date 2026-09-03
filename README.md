@@ -1,102 +1,68 @@
-# deezer.js
+# @lagandevs/deezer.js
 
-A simple package to interact with the Deezer API with track decryption support.
+A lightweight Deezer API client with track decryption support. Version 4 is ESM-first and uses Web Platform APIs so it can be bundled for Cloudflare Workers, Vercel edge/serverless runtimes, browsers, and modern Node.js without Node runtime shims.
 
-## Examples
+## Install
 
-### Searching for tracks, albums, artists, and playlists
-
-```js
-const { writeFile } = "fs/promises",
-	Deezer = require("@flazepe/deezer.js"),
-	deezer = new Deezer();
-
-(async () => {
-	// Search for tracks
-	const tracks = await deezer.search("A track name", "track"); // Or simply `await deezer.search("A track name")`
-	if (tracks[0]) console.log(tracks[0]);
-
-	// Search for albums
-	const albums = await deezer.search("An album name", "album");
-	if (albums[0]) console.log(albums[0]);
-
-	// Search for artists
-	const artists = await deezer.search("An artist name", "artist");
-	if (artists[0]) console.log(artists[0]);
-
-	// Search for playlists
-	const playlists = await deezer.search("A playlist name", "playlist");
-	if (playlists[0]) console.log(playlists[0]);
-})();
+```bash
+pnpm add @lagandevs/deezer.js
 ```
 
-### Getting tracks, albums, artists, and playlists
+## Usage
 
 ```js
-const { writeFile } = "fs/promises",
-	Deezer = require("@flazepe/deezer.js"),
-	deezer = new Deezer();
+import Deezer from "@lagandevs/deezer.js";
 
-(async () => {
-	// Get a track by ID
-	let entity = await deezer.get("A track ID", "track"); // Or simply `await deezer.get("A track ID")`
-	if (entity) console.log(entity.type, entity.info, entity.tracks); // `entity.tracks` would contain exactly 1 track
-
-	// Get an album by ID
-	entity = await deezer.get("An album ID", "album");
-	if (entity) console.log(entity.type, entity.info, entity.tracks); // `entity.tracks` would contain the album's tracks
-
-	// Get an artist by ID
-	entity = await deezer.get("An artist ID", "artist");
-	if (entity) console.log(entity.type, entity.info, entity.tracks); // `entity.tracks` would contain the artist's top tracks
-
-	// Get a playlist by ID
-	entity = await deezer.get("A playlist ID", "playlist");
-	if (entity) console.log(entity.type, entity.info, entity.tracks); // `entity.tracks` would contain the playlist's tracks
-
-	// No need to provide the entity type if you are providing a URL
-	entity = await deezer.get("https://www.deezer.com/en/album/428673387");
-	if (entity) console.log(entity.type, entity.info, entity.tracks);
-})();
+const deezer = new Deezer(process.env.DEEZER_ARL);
+const tracks = await deezer.search("A track name");
+const mp3 = await deezer.getAndDecryptTrack(tracks[0]);
 ```
 
-### Downloading a track
+`getAndDecryptTrack()` returns a `Uint8Array` containing the same decrypted audio bytes previously returned in a Node `Buffer`. In Workers it can be passed directly to `Response`:
 
 ```js
-const { writeFile } = "fs/promises",
-	Deezer = require("@flazepe/deezer.js"),
-	deezer = new Deezer();
-
-(async () => {
-	const tracks = await deezer.search("From Under Cover (Caught Up In A Love Song)"),
-		track = tracks[0],
-		trackBuffer = await deezer.getAndDecryptTrack(track);
-
-	// Save track to a file
-	await writeFile(`${track.ART_NAME} - ${track.SNG_TITLE}.mp3`, trackBuffer);
-})();
+return new Response(mp3, {
+  headers: { "content-type": "audio/mpeg" }
+});
 ```
 
-### Downloading a track in FLAC (for Deezer Premium accounts only)
+## Cloudflare Workers
 
-Provide the Deezer `arl` cookie to the constructor to authenticate as a Deezer Premium account.
+The package itself does not require `nodejs_compat`. Runtime code uses `fetch`, Web Crypto, `Uint8Array`, `TextEncoder`, and `TextDecoder`.
 
 ```js
-const { writeFile } = "fs/promises",
-	Deezer = require("@flazepe/deezer.js"),
-	deezer = new Deezer("xxxxxxxxxxxxxxxxxxxx"); // Insert your arl cookie here
+import Deezer from "@lagandevs/deezer.js";
 
-(async () => {
-	const tracks = await deezer.search("From Under Cover (Caught Up In A Love Song)"),
-		track = tracks[0],
-		trackBuffer = await deezer.getAndDecryptTrack(track, true); // Set the FLAC parameter to `true`
+export default {
+  async fetch(request, env) {
+    const deezer = new Deezer(env.DEEZER_ARL);
+    const entity = await deezer.get("3692935892", "track");
+    if (!entity) return new Response("Not found", { status: 404 });
 
-	// Save track to a file
-	await writeFile(`${track.ART_NAME} - ${track.SNG_TITLE}.flac`, trackBuffer);
-})();
+    const audio = await deezer.getAndDecryptTrack(entity.tracks[0]);
+    return new Response(audio, {
+      headers: { "content-type": "audio/mpeg" }
+    });
+  }
+};
 ```
 
-## Links
+## API compatibility
 
--   [Documentation](https://flazepe.github.io/deezer.js/)
--   [npm](https://www.npmjs.com/package/@flazepe/deezer.js)
+The public class and method shapes are unchanged:
+
+- `new Deezer(arl?)`
+- `deezer.api(method, body)`
+- `deezer.search(query, type?)`
+- `deezer.get(idOrURL, type?)`
+- `deezer.getAndDecryptTrack(track, flac?)`
+
+Supported entity types remain `track`, `album`, `artist`, and `playlist`.
+
+## Runtime notes
+
+- HTTP uses the global `fetch()` API.
+- Session-cache keys use Web Crypto SHA-256.
+- Deezer's audio protocol requires MD5 for Blowfish key derivation. Web Crypto intentionally does not expose MD5, so that protocol-specific digest is implemented in pure JavaScript.
+- Blowfish uses the ESM/browser-compatible `egoroof-blowfish` package and typed arrays.
+- Runtime source contains no `require()`, `node:crypto`, `node:https`, `https.Agent`, Node streams, or `Buffer` usage.
