@@ -2,16 +2,33 @@
 	"name": "@flazepe/deezer.js",
 	"version": "2.0.8",
 	"description": "A simple package to interact with the Deezer API with track decryption support.",
-	"main": "src/index.js",
-	"types": "src/index.d.ts",
+	"main": "./src/index.js",
+	"types": "./src/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./src/index.d.ts",
+			"require": "./src/index.js",
+			"default": "./src/index.js"
+		}
+	},
+	"files": [
+		"src",
+		"LICENSE",
+		"README.md"
+	],
+	"engines": {
+		"node": ">=18.17.0"
+	},
+	"sideEffects": false,
 	"scripts": {
+		"check": "node --check src/index.js",
 		"docs:build": "jsdoc src -d docs -R README.md -t node_modules/clean-jsdoc-theme"
 	},
 	"author": "flazepe",
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "https://github.com/flazepe/deezer.js.git"
+		"url": "git+https://github.com/LaganYT/deezer.js.git"
 	},
 	"dependencies": {
 		"blowfish-js": "^1.0.0"
