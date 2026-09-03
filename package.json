@@ -1,6 +1,6 @@
 {
-	"name": "@flazepe/deezer.js",
-	"version": "2.0.8",
+	"name": "@LaganYT/deezer.js",
+	"version": "3.0.0",
 	"description": "A simple package to interact with the Deezer API with track decryption support.",
 	"main": "./src/index.js",
 	"types": "./src/index.d.ts",
@@ -24,10 +24,9 @@
 		"benchmark": "node benchmark/decryption.js",
 		"benchmark:quick": "node benchmark/decryption.js --sizes=1,5 --iterations=3 --warmup=1",
 		"benchmark:e2e": "node benchmark/e2e.js",
-		"check": "node --check src/index.js && node --check benchmark/decryption.js && node --check benchmark/e2e.js && node --check benchmark/legacy-deezer.js",
-		"docs:build": "jsdoc src -d docs -R README.md -t node_modules/clean-jsdoc-theme"
+		"check": "node --check src/index.js && node --check benchmark/decryption.js && node --check benchmark/e2e.js && node --check benchmark/legacy-deezer.js"
 	},
-	"author": "flazepe",
+	"author": "LaganYT",
 	"license": "MIT",
 	"repository": {
 		"type": "git",
