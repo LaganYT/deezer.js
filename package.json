@@ -1,17 +1,36 @@
 {
-	"name": "@flazepe/deezer.js",
-	"version": "2.0.8",
+	"name": "@LaganYT/deezer.js",
+	"version": "3.0.0",
 	"description": "A simple package to interact with the Deezer API with track decryption support.",
-	"main": "src/index.js",
-	"types": "src/index.d.ts",
-	"scripts": {
-		"docs:build": "jsdoc src -d docs -R README.md -t node_modules/clean-jsdoc-theme"
+	"main": "./src/index.js",
+	"types": "./src/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./src/index.d.ts",
+			"require": "./src/index.js",
+			"default": "./src/index.js"
+		}
 	},
-	"author": "flazepe",
+	"files": [
+		"src",
+		"LICENSE",
+		"README.md"
+	],
+	"engines": {
+		"node": ">=18.17.0"
+	},
+	"sideEffects": false,
+	"scripts": {
+		"benchmark": "node benchmark/decryption.js",
+		"benchmark:quick": "node benchmark/decryption.js --sizes=1,5 --iterations=3 --warmup=1",
+		"benchmark:e2e": "node benchmark/e2e.js",
+		"check": "node --check src/index.js && node --check benchmark/decryption.js && node --check benchmark/e2e.js && node --check benchmark/legacy-deezer.js"
+	},
+	"author": "LaganYT",
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "https://github.com/flazepe/deezer.js.git"
+		"url": "git+https://github.com/LaganYT/deezer.js.git"
 	},
 	"dependencies": {
 		"blowfish-js": "^1.0.0"
