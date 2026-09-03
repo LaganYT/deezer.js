@@ -82,6 +82,31 @@ function createFixture(sizeBytes) {
 	return buffer;
 }
 
+function parseArgs(argv) {
+	const options = {};
+
+	for (const argument of argv) {
+		const [flag, value] = argument.split("=", 2);
+		if (!value) throw new Error(`Expected --name=value syntax, received: ${argument}`);
+
+		switch (flag) {
+			case "--sizes":
+				options.sizes = value;
+				break;
+			case "--iterations":
+				options.iterations = value;
+				break;
+			case "--warmup":
+				options.warmup = value;
+				break;
+			default:
+				throw new Error(`Unknown benchmark option: ${flag}`);
+		}
+	}
+
+	return options;
+}
+
 function parsePositiveInteger(value, fallback, name) {
 	if (value == null || value === "") return fallback;
 
@@ -96,7 +121,7 @@ function parseSizes(value) {
 
 	const sizes = value.split(",").map(item => Number(item.trim()));
 	if (!sizes.length || sizes.some(size => !Number.isFinite(size) || size <= 0)) {
-		throw new Error("BENCH_SIZES_MB must be a comma-separated list of positive numbers.");
+		throw new Error("Benchmark sizes must be a comma-separated list of positive numbers.");
 	}
 
 	return sizes;
@@ -209,9 +234,10 @@ function benchmarkDecryption(sizeMB, iterations, warmupIterations) {
 }
 
 function main() {
-	const sizes = parseSizes(process.env.BENCH_SIZES_MB);
-	const iterations = parsePositiveInteger(process.env.BENCH_ITERATIONS, DEFAULT_ITERATIONS, "BENCH_ITERATIONS");
-	const warmupIterations = parsePositiveInteger(process.env.BENCH_WARMUP, DEFAULT_WARMUP_ITERATIONS, "BENCH_WARMUP");
+	const args = parseArgs(process.argv.slice(2));
+	const sizes = parseSizes(args.sizes ?? process.env.BENCH_SIZES_MB);
+	const iterations = parsePositiveInteger(args.iterations ?? process.env.BENCH_ITERATIONS, DEFAULT_ITERATIONS, "iterations");
+	const warmupIterations = parsePositiveInteger(args.warmup ?? process.env.BENCH_WARMUP, DEFAULT_WARMUP_ITERATIONS, "warmup");
 
 	console.log("deezer.js benchmark suite");
 	console.log(`Node ${process.version} | ${process.platform} ${process.arch}`);
