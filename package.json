@@ -1,5 +1,5 @@
 {
-	"name": "@LaganYT/deezer.js",
+	"name": "@lagandevs/deezer.js",
 	"version": "3.0.0",
 	"description": "A simple package to interact with the Deezer API with track decryption support.",
 	"main": "./src/index.js",
@@ -26,11 +26,11 @@
 		"benchmark:e2e": "node benchmark/e2e.js",
 		"check": "node --check src/index.js && node --check benchmark/decryption.js && node --check benchmark/e2e.js && node --check benchmark/legacy-deezer.js"
 	},
-	"author": "LaganYT",
+	"author": "lagandevs",
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/LaganYT/deezer.js.git"
+		"url": "git+https://github.com/laganyt/deezer.js.git"
 	},
 	"dependencies": {
 		"blowfish-js": "^1.0.0"
