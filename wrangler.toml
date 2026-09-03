@@ -1,0 +1,3 @@
+name = "deezer-js-worker-smoke-test"
+main = "examples/worker.js"
+compatibility_date = "2026-09-03"
