@@ -1,6 +1,12 @@
-const blowfish = require("blowfish-js"),
-	{ createHash } = require("crypto"),
-	{ request } = require("https");
+const blowfish = require("blowfish-js");
+const { createHash } = require("node:crypto");
+
+const CBC_KEY = Buffer.from("g4el58wc0zvf9na1", "ascii");
+const BLOWFISH_IV = Buffer.from([0, 1, 2, 3, 4, 5, 6, 7]);
+const ENTITY_TYPES = ["track", "album", "artist", "playlist"];
+const MP3_FORMATS = ["MP3_320", "MP3_256", "MP3_128", "MP3_64"];
+const SESSION_EXPIRE = 15 * 60 * 1000;
+const STRIPE_SIZE = 2048;
 
 /**
  * @typedef {"track" | "album" | "artist" | "playlist"} EntityType An entity type
@@ -14,15 +20,13 @@ const blowfish = require("blowfish-js"),
  */
 
 class Deezer {
-	static #CBC_KEY = "g4el58wc" + "0zvf9na1";
-	static #ENTITY_TYPES = ["track", "album", "artist", "playlist"];
-	static #SESSION_EXPIRE = 60000 * 15;
 	#arl = null;
-	#currentSessionTimestamp = null;
+	#currentSessionTimestamp = 0;
 	#sessionID = null;
 	#apiToken = null;
 	#isPremium = false;
 	#licenseToken = null;
+	#sessionPromise = null;
 
 	/**
 	 * Constructs the Deezer class.
@@ -33,32 +37,25 @@ class Deezer {
 		if (typeof arl === "string") this.#arl = arl;
 	}
 
-	#request(url, options = {}) {
-		return new Promise((resolve, reject) =>
-			request(url, options, res => {
-				const chunks = [];
+	async #request(url, options = {}) {
+		const { buffer = false, ...requestOptions } = options;
+		const response = await fetch(url, requestOptions);
 
-				res.on("data", chunk => chunks.push(chunk)).on("end", () => {
-					const buffer = Buffer.concat(chunks);
+		if (buffer) return Buffer.from(await response.arrayBuffer());
 
-					try {
-						resolve(options.buffer ? buffer : JSON.parse(buffer.toString()));
-					} catch (error) {
-						console.error(`Error parsing body as JSON: ${buffer.toString()}`);
-						reject(error);
-					}
-				});
-			})
-				.on("error", reject)
-				.end(options.body)
-		);
+		const body = await response.text();
+
+		try {
+			return JSON.parse(body);
+		} catch (error) {
+			console.error(`Error parsing body as JSON: ${body}`);
+			throw error;
+		}
 	}
 
-	async #ensureSession() {
-		if (this.#currentSessionTimestamp + Deezer.#SESSION_EXPIRE > Date.now()) return;
-
+	async #refreshSession() {
 		const data = await this.#request("https://www.deezer.com/ajax/gw-light.php?method=deezer.getUserData&input=3&api_version=1.0&api_token=", {
-			headers: this.#arl ? { cookie: `arl=${this.#arl}` } : null
+			headers: this.#arl ? { cookie: `arl=${this.#arl}` } : undefined
 		});
 
 		this.#currentSessionTimestamp = Date.now();
@@ -66,6 +63,18 @@ class Deezer {
 		this.#apiToken = data.results.checkForm;
 		this.#isPremium = data.results.OFFER_NAME !== "Deezer Free";
 		this.#licenseToken = data.results.USER.OPTIONS.license_token;
+	}
+
+	async #ensureSession() {
+		if (this.#currentSessionTimestamp + SESSION_EXPIRE > Date.now()) return;
+
+		if (!this.#sessionPromise) {
+			this.#sessionPromise = this.#refreshSession().finally(() => {
+				this.#sessionPromise = null;
+			});
+		}
+
+		await this.#sessionPromise;
 	}
 
 	/**
@@ -95,7 +104,10 @@ class Deezer {
 	 */
 	async search(query, type) {
 		if (typeof query !== "string") throw new TypeError("`query` must be a string.");
-		type = Deezer.#ENTITY_TYPES.find(e => e === type?.toLowerCase?.()) ?? "track";
+
+		const normalizedType = type?.toLowerCase?.();
+		type = ENTITY_TYPES.includes(normalizedType) ? normalizedType : "track";
+
 		return (await this.api("deezer.pageSearch", { query, start: 0, nb: 200, top_tracks: true })).results[type.toUpperCase()].data;
 	}
 
@@ -110,11 +122,14 @@ class Deezer {
 
 		if (type) {
 			if (typeof type !== "string") throw new TypeError("`type` must be a string.");
-			type = Deezer.#ENTITY_TYPES.find(e => e === type.toLowerCase()) ?? "track";
+
+			const normalizedType = type.toLowerCase();
+			type = ENTITY_TYPES.includes(normalizedType) ? normalizedType : "track";
 		} else {
 			while (idOrURL.endsWith("/")) idOrURL = idOrURL.slice(0, -1);
 
-			type = Deezer.#ENTITY_TYPES.find(e => idOrURL.toLowerCase().includes(e)) ?? "track";
+			const lowerCaseURL = idOrURL.toLowerCase();
+			type = ENTITY_TYPES.find(entityType => lowerCaseURL.includes(entityType)) ?? "track";
 			idOrURL = idOrURL.split("/").pop().split("?").shift();
 
 			if (!/^[0-9]+$/.test(idOrURL)) return null;
@@ -123,29 +138,29 @@ class Deezer {
 		const data = { type };
 
 		switch (type) {
-			case "track":
+			case "track": {
 				const track = (await this.api("song.getListData", { sng_ids: [idOrURL] })).results.data[0];
-
 				Object.assign(data, { info: track, tracks: [track] });
 				break;
+			}
 
-			case "album":
+			case "album": {
 				const album = (await this.api("deezer.pageAlbum", { alb_id: idOrURL, nb: 200, lang: "us" })).results;
-
 				Object.assign(data, { info: album.DATA, tracks: album.SONGS?.data ?? [] });
 				break;
+			}
 
-			case "artist":
+			case "artist": {
 				const artist = (await this.api("deezer.pageArtist", { art_id: idOrURL, lang: "us" })).results;
-
 				Object.assign(data, { info: artist.DATA, tracks: artist.TOP?.data ?? [] });
 				break;
+			}
 
-			case "playlist":
+			case "playlist": {
 				const playlist = (await this.api("deezer.pagePlaylist", { playlist_id: idOrURL, nb: 200 })).results;
-
 				Object.assign(data, { info: playlist.DATA, tracks: playlist.SONGS?.data ?? [] });
 				break;
+			}
 		}
 
 		return data.info ? data : null;
@@ -174,48 +189,35 @@ class Deezer {
 			if (!Number(track.FILESIZE_FLAC)) throw new Error(`FLAC audio is unavailable for track ${track.SNG_ID}.`);
 		}
 
-		const format = flac ? "FLAC" : ["MP3_320", "MP3_256", "MP3_128", "MP3_64"].find(e => Number(track[`FILESIZE_${e}`]));
+		const format = flac ? "FLAC" : MP3_FORMATS.find(candidate => Number(track[`FILESIZE_${candidate}`]));
 		if (!format) throw new Error(`Audio is unavailable for track ${track.SNG_ID}.`);
 
 		const data = await this.#request("https://media.deezer.com/v1/get_url", {
-				method: "POST",
-				body: JSON.stringify({
-					license_token: this.#licenseToken,
-					media: [{ type: "FULL", formats: [{ cipher: "BF_CBC_STRIPE", format }] }],
-					track_tokens: [track.TRACK_TOKEN]
-				})
-			}),
-			url = data?.data?.[0]?.media?.[0]?.sources?.[0]?.url;
+			method: "POST",
+			body: JSON.stringify({
+				license_token: this.#licenseToken,
+				media: [{ type: "FULL", formats: [{ cipher: "BF_CBC_STRIPE", format }] }],
+				track_tokens: [track.TRACK_TOKEN]
+			})
+		});
+		const url = data?.data?.[0]?.media?.[0]?.sources?.[0]?.url;
 
 		if (!url) throw new Error(`Could not get track ${track.SNG_ID}'s audio source URL: ${data?.errors?.[0]?.message ?? "Unknown error"}`);
 
-		const buffer = await this.#request(url, { buffer: true }),
-			md5 = createHash("md5").update(track.SNG_ID).digest("hex"),
-			blowfishKey = blowfish.key(
-				Array(16)
-					.fill(0)
-					.reduce((acc, _, i) => acc + String.fromCharCode(md5.charCodeAt(i) ^ md5.charCodeAt(i + 16) ^ Deezer.#CBC_KEY.charCodeAt(i)), "")
-			),
-			decryptedBuffer = Buffer.alloc(buffer.length);
+		const buffer = await this.#request(url, { buffer: true });
+		const md5 = Buffer.from(createHash("md5").update(track.SNG_ID).digest("hex"), "ascii");
+		const key = Buffer.allocUnsafe(16);
 
-		let i = 0,
-			position = 0;
+		for (let i = 0; i < key.length; i++) key[i] = md5[i] ^ md5[i + 16] ^ CBC_KEY[i];
 
-		while (position < buffer.length) {
-			const chunkSize = Math.min(2048, buffer.length - position);
+		const blowfishKey = blowfish.key(key);
+		const decryptedBuffer = Buffer.from(buffer);
 
-			let chunk = Buffer.alloc(chunkSize);
-			buffer.copy(chunk, 0, position, position + chunkSize);
+		for (let position = 0, stripe = 0; position + STRIPE_SIZE <= buffer.length; position += STRIPE_SIZE, stripe++) {
+			if (stripe % 3 !== 0) continue;
 
-			chunk =
-				i % 3 || chunkSize < 2048
-					? chunk.toString("binary")
-					: blowfish.cbc(blowfishKey, Buffer.from([0, 1, 2, 3, 4, 5, 6, 7]), chunk, true).toString("binary");
-
-			decryptedBuffer.write(chunk, position, chunk.length, "binary");
-
-			position += chunkSize;
-			i++;
+			const decrypted = blowfish.cbc(blowfishKey, BLOWFISH_IV, buffer.subarray(position, position + STRIPE_SIZE), true);
+			decryptedBuffer.set(decrypted, position);
 		}
 
 		return decryptedBuffer;
