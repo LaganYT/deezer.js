@@ -22,7 +22,7 @@
 	"sideEffects": false,
 	"scripts": {
 		"benchmark": "node benchmark/decryption.js",
-		"benchmark:quick": "BENCH_SIZES_MB=1,5 BENCH_ITERATIONS=3 BENCH_WARMUP=1 node benchmark/decryption.js",
+		"benchmark:quick": "node benchmark/decryption.js --sizes=1,5 --iterations=3 --warmup=1",
 		"check": "node --check src/index.js && node --check benchmark/decryption.js",
 		"docs:build": "jsdoc src -d docs -R README.md -t node_modules/clean-jsdoc-theme"
 	},
